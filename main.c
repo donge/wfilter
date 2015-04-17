@@ -69,7 +69,9 @@
 #include <rte_ring.h>
 #include <rte_mempool.h>
 #include <rte_mbuf.h>
+
 #include <rte_ip.h>
+#include <rte_tcp.h>
 #include "main.h"
 
 #include "ahocorasick.h"
@@ -322,39 +324,58 @@ l2fwd_keyword_init(unsigned lcore_id)
 
 }
 
-
+static void fmt_ip(int ip, char *buf)
+{
+    unsigned char bytes[4];
+    bytes[0] = ip & 0xFF;
+    bytes[1] = (ip >> 8) & 0xFF;
+    bytes[2] = (ip >> 16) & 0xFF;
+    bytes[3] = (ip >> 24) & 0xFF; 
+    //little endian
+    sprintf(buf, "%d.%d.%d.%d", bytes[0], bytes[1], bytes[2], bytes[3]);        
+}
 
 char log_buf[512];
 AC_TEXT_t   tmp_text;
 
+
+
+
 static void 
-l2fwd_keyword_test(struct rte_mbuf *m)
+l2fwd_keyword_test(struct rte_mbuf *m, struct ipv4_hdr *ipv4_hdr)
 {
     AC_MATCH_t * matchp;
+    unsigned lcore_id = rte_lcore_id();
 
-    tmp_text.astring = (char *)rte_pktmbuf_mtod(m, struct ether_hdr *);                                         
-    tmp_text.length = rte_pktmbuf_data_len(m);                             
-    ac_automata_settext (atm[rte_lcore_id()], &tmp_text, 0);
+    tmp_text.astring = (char *)rte_pktmbuf_mtod(m, struct ether_hdr *);
+    tmp_text.length = rte_pktmbuf_data_len(m);
+    ac_automata_settext (atm[lcore_id], &tmp_text, 0);
 
-                                                                            
-    while ((matchp = ac_automata_findnext(atm[rte_lcore_id()])))                            
-    {                                                                       
-        unsigned int j;                                                                   
+    while ((matchp = ac_automata_findnext(atm[lcore_id])))
+    {
+        unsigned int j;
         int n = 0;
+        char src_ip[16], dst_ip[16];
+
+        fmt_ip(ipv4_hdr->src_addr, src_ip);
+        fmt_ip(ipv4_hdr->dst_addr, dst_ip);
         //printf("WARNING: @%2ld: ", matchp->position);
-        n += sprintf(log_buf+n, "WARNING: @%2ld: ", matchp->position);
-                                                                            
+
+        n += sprintf(log_buf+n, "SRC(%s)->DST(%s)/TCP(%u) HTTP: ", src_ip, dst_ip, ipv4_hdr->packet_id);
+        n += sprintf(log_buf+n, "web content @%2ld: ", matchp->position);
+
         for (j=0; j < matchp->match_num; j++) 
             //printf("#%ld (%s), ", matchp->patterns[j].rep.number, matchp->patterns[j].astring);
-            n += sprintf(log_buf+n, "#%ld (%s), ", matchp->patterns[j].rep.number, matchp->patterns[j].astring);
+            n += sprintf(log_buf+n, "keyword #%ld (%s) is found. ", matchp->patterns[j].rep.number, matchp->patterns[j].astring);
+
             // CAUTION: be careful about using m->matched_patterns[j].astring
             // if 'astring' has permanent allocation inside your program's  
             // memory area, you can use it. otherwise it will point to      
             // an incorrect memory place.                         
-                  
+
         //printf("\n");
         RTE_LOG(ERR, L2FWD, "%s\n", log_buf);                                                      
-    }            
+    }
 
 
 }
@@ -379,6 +400,46 @@ l2fwd_dst_nat(struct rte_mbuf *m)
 #endif
 }
 
+
+#define HTTP_DEFAULT_PORT 80
+static unsigned int
+wfilter_parse_l3(struct rte_mbuf *m, struct ipv4_hdr **ipv4_hdr)
+{
+    struct tcp_hdr *tcp_hdr;
+    struct ether_hdr *eth_hdr;
+
+    uint16_t l3_len, l4_len, l4_sport, l4_dport;
+    uint8_t l4_proto;
+
+    eth_hdr = rte_pktmbuf_mtod(m, struct ether_hdr *);
+    *ipv4_hdr = (struct ipv4_hdr *)(eth_hdr + 1);
+
+    l3_len = ((*ipv4_hdr)->version_ihl & 0x0f) * 4;
+    l4_proto = (*ipv4_hdr)->next_proto_id;
+
+    //printf("l4_proto: %u, l3_len: %u\n", l4_proto, l3_len);
+
+    if (l4_proto == IPPROTO_TCP) {
+        //test
+        //return HTTP_DEFAULT_PORT;
+
+        tcp_hdr = (struct tcp_hdr *)((char *)(*ipv4_hdr) + l3_len);
+        l4_len = (tcp_hdr->data_off & 0xf0) >> 2;
+        l4_sport = ntohs(tcp_hdr->src_port);
+        l4_dport = ntohs(tcp_hdr->dst_port);
+        //printf("SRC PORT: %u DST PORT: %u, l4_len: %u\n", l4_sport, l4_dport, l4_len);
+
+        /* http */
+        if ((l4_sport == HTTP_DEFAULT_PORT) || (l4_sport == 8080)
+         || (l4_dport == HTTP_DEFAULT_PORT) || (l4_dport == 8080)) {
+            return HTTP_DEFAULT_PORT;
+        }
+    }
+
+    return 0;
+}
+
+
 static void
 l2fwd_simple_forward(struct rte_mbuf *m, unsigned portid)
 {
@@ -398,7 +459,14 @@ l2fwd_simple_forward(struct rte_mbuf *m, unsigned portid)
 
 	/* change dst ip to 192.168.233.1 */
 	l2fwd_dst_nat(m);
-        l2fwd_keyword_test(m);
+  //printf("parse l3 l4\n");
+    {
+        struct ipv4_hdr *ipv4_hdr;
+    
+        if (wfilter_parse_l3(m, &ipv4_hdr) == HTTP_DEFAULT_PORT) {
+            l2fwd_keyword_test(m, ipv4_hdr);
+        }
+    }
 
         m->ol_flags |= PKT_TX_IP_CKSUM;
         m->pkt.vlan_macip.f.l2_len = sizeof(struct ether_hdr);
