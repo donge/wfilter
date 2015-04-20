@@ -43,9 +43,9 @@ include $(RTE_SDK)/mk/rte.vars.mk
 APP = l2fwd
 
 # all source are stored in SRCS-y
-SRCS-y := main.c ahocorasick.c node.c
+SRCS-y := main.c ./ahocorasick/ahocorasick.c ./ahocorasick/node.c
 
-CFLAGS += -O0 -g -o ahocorasick.o
+CFLAGS += -O0 -g 
 #CFLAGS += $(WERROR_FLAGS)
 
 include $(RTE_SDK)/mk/rte.extapp.mk

@@ -74,7 +74,7 @@
 #include <rte_tcp.h>
 #include "main.h"
 
-#include "ahocorasick.h"
+#include "ahocorasick/ahocorasick.h"
 
 #define RTE_LOGTYPE_L2FWD RTE_LOGTYPE_USER1
 
@@ -288,6 +288,7 @@ const AC_ALPHABET_t * sample_patterns[] = {
     "test",
     "fuck",
     "你好",
+    "世界",
     "POST",
     "GET",
     "simplicity",
@@ -433,6 +434,10 @@ wfilter_parse_l3(struct rte_mbuf *m, struct ipv4_hdr **ipv4_hdr)
         if ((l4_sport == HTTP_DEFAULT_PORT) || (l4_sport == 8080)
          || (l4_dport == HTTP_DEFAULT_PORT) || (l4_dport == 8080)) {
             return HTTP_DEFAULT_PORT;
+        } else {
+            //test all protocol
+            return HTTP_DEFAULT_PORT;
+            printf("SRC PORT: %u DST PORT: %u, l4_len: %u\n", l4_sport, l4_dport, l4_len);
         }
     }
 
