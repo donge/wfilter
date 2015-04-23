@@ -35,17 +35,17 @@ endif
 
 # Default target, can be overriden by command line or environment
 RTE_TARGET ?= x86_64-native-linuxapp-gcc
-LINK_LIBRARY := ahocorasick
+LINK_LIBRARY := 
 
 include $(RTE_SDK)/mk/rte.vars.mk
 
 # binary name
-APP = l2fwd
+APP = wfilter
 
 # all source are stored in SRCS-y
 SRCS-y := main.c ./ahocorasick/ahocorasick.c ./ahocorasick/node.c
 
-CFLAGS += -O0 -g 
+CFLAGS += -O0 -g -I/usr/include/libbson-1.0 -I/usr/include/libmongoc-1.0 -L/usr/lib64 -lmongoc-1.0 -lbson-1.0
 #CFLAGS += $(WERROR_FLAGS)
 
 include $(RTE_SDK)/mk/rte.extapp.mk
