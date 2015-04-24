@@ -285,7 +285,10 @@ l2fwd_send_packet(struct rte_mbuf *m, uint8_t port)
 	return 0;
 }
 
-const AC_ALPHABET_t * sample_patterns[] = {
+
+short unsigned int pat_cur = 0;
+/*const*/
+AC_ALPHABET_t sample_patterns[100][100] = {
     "hello",
     "world",
     "test",
@@ -296,14 +299,13 @@ const AC_ALPHABET_t * sample_patterns[] = {
     "GET",
     "simplicity",
     "utter",
-    "whatever",
 };
 #define PATTERN_COUNT (sizeof(sample_patterns)/sizeof(AC_ALPHABET_t *))
 
 AC_AUTOMATA_t   *atm[16];//core number
 
 
-#define MONGOC 0
+#define MONGOC 1
 #if MONGOC
 int
 mongo_client_init (void)
@@ -326,7 +328,13 @@ mongo_client_init (void)
         bson_iter_t iter;
         if (bson_iter_init (&iter, doc) && bson_iter_find (&iter, "keyword")) {
              printf ("Found element key: \"%s\": %s\n", bson_iter_key (&iter), bson_iter_utf8(&iter, NULL));
-        } 
+        }
+
+
+        //add to sample_patterns
+        strcpy(sample_patterns[pat_cur++], bson_iter_utf8(&iter, NULL));
+        
+        
         str = bson_as_json (doc, NULL);
         printf ("%s\n", str);
         bson_free (str);
@@ -356,7 +364,7 @@ l2fwd_keyword_init(unsigned lcore_id)
 
     // 3. Add patterns to automata                                          
                                                                             
-    for (i=0; i<PATTERN_COUNT; i++)                                         
+    for (i=0; i<pat_cur/*PATTERN_COUNT*/; i++)                                         
     {                                                                       
         tmp_pattern.astring = sample_patterns[i];                           
         tmp_pattern.rep.number = i+1; // optional                           
@@ -818,6 +826,10 @@ MAIN(int argc, char **argv)
 	uint8_t portid, last_port;
 	unsigned lcore_id, rx_lcore_id;
 	unsigned nb_ports_in_mask = 0;
+
+
+  //init mongo_client to read the dict
+  mongo_client_init();
 
 	/* init EAL */
 	ret = rte_eal_init(argc, argv);
